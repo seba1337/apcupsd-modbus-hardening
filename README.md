@@ -92,6 +92,19 @@ DEVICE
    make the OS and UPS renegotiate the USB HID session, independent of
    whatever `check_state()` is doing.
 
+9. **Fixed a guaranteed deadlock on real power failure.** `action.c`'s
+   `do_action()` holds the UPS-state lock (`write_lock`) across its whole
+   state-machine pass, including the `st_PowerFailure` case, which calls
+   `device_entry_point(DEVICE_CMD_CHECK_SELFTEST)` to determine whether this
+   is a self-test or a genuine outage. The MODBUS driver's `entry_point()`
+   handles that command by calling `UpdateCis(true)` to refresh
+   `CI_WHY_BATT` — which takes the *same* lock again, on the same thread.
+   The UPS-state mutex was a plain (non-recursive) `pthread_mutex_t`
+   (`src/lib/newups.c`), so this was an unconditional self-deadlock on
+   every real power failure — the daemon would silently hang forever at
+   the exact moment mains power actually went out, needing a manual
+   restart to recover. Fixed by making the mutex `PTHREAD_MUTEX_RECURSIVE`.
+
 ## Known limitations / possible future work
 
 `get_capabilities()`'s per-CI probe retry (point 4) treats a timeout or

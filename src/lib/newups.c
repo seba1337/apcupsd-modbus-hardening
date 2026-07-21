@@ -34,13 +34,25 @@ UPSINFO *new_ups()
 {
    int stat;
    UPSINFO *ups;
+   pthread_mutexattr_t attr;
 
    ups = (UPSINFO *) malloc(sizeof(UPSINFO));
    if (!ups)
       Error_abort("Could not allocate ups memory\n");
 
    memset(ups, 0, sizeof(UPSINFO));
-   if ((stat = pthread_mutex_init(&ups->mutex, NULL)) != 0) {
+
+   // Recursive, not the pthread default: do_action()'s st_PowerFailure
+   // handling (action.c) calls device_entry_point(DEVICE_CMD_CHECK_SELFTEST)
+   // while already holding this lock, and the MODBUS driver's entry_point()
+   // re-enters write_lock() on the same thread to refresh CI_WHY_BATT. With
+   // a plain mutex that's an unconditional self-deadlock on every real
+   // power failure -- the one moment a UPS monitor can't afford to hang.
+   pthread_mutexattr_init(&attr);
+   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+   stat = pthread_mutex_init(&ups->mutex, &attr);
+   pthread_mutexattr_destroy(&attr);
+   if (stat != 0) {
       Error_abort("Could not create pthread mutex. ERR=%s\n", strerror(stat));
       free(ups);
       return NULL;
