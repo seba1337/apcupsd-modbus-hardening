@@ -1,0 +1,31 @@
+# Configure output (regenerate with ./configure)
+config.log
+config.out
+config.status
+include/config.h
+include/libusb.h
+src/cgi/cgiconfig.h
+
+# Compiled objects / dependency tracking
+.obj/
+.deps/
+
+# Static libraries
+*.a
+*.la
+
+# Linked binaries
+src/apcupsd
+src/apctest
+src/apcaccess
+src/smtp
+src/apcagent
+src/gapcmon
+src/cgi/apcupsd.cgi
+src/cgi/multimon.cgi
+
+# Editor/tooling
+.claude/
+
+# Stray build-time artifact (GPL boilerplate only, not real source)
+/c
