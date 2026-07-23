@@ -229,8 +229,22 @@ void do_device(UPSINFO *ups)
    /* get all data so apcaccess is happy */
    fillUPS(ups);
 
+   device_thread_stopped = 0;
+
    while(1)
    {
+      // apcupsd_terminate() (running on the separate signal-handling
+      // thread -- see apcsignal.c) waits for device_thread_stopped before
+      // tearing down (and deleting) ups->driver's comm object. Check here,
+      // between cycles, rather than only relying on check_state()'s own
+      // internal check -- this covers every driver, not just ones that
+      // added their own shutdown_requested check to check_state().
+      if (shutdown_requested)
+      {
+         device_thread_stopped = 1;
+         return;
+      }
+
       /* compute appropriate wait time */
       ups->wait_time = device_wait_time(ups);
 

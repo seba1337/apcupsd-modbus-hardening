@@ -29,6 +29,13 @@ UPSINFO *core_ups = NULL;
 static void daemon_start(void);
 
 int pidcreated = 0;
+
+// See extern.h for what these coordinate. device_thread_stopped defaults
+// to "stopped" so the hibernate/shutdown one-shot path (which never
+// starts do_device()'s loop at all) doesn't wait on a thread that was
+// never running.
+volatile sig_atomic_t shutdown_requested = 0;
+volatile sig_atomic_t device_thread_stopped = 1;
 extern int kill_on_powerfail;
 extern FILE *trace_fd;
 extern char *pidfile;
@@ -48,6 +55,31 @@ void apcupsd_terminate(int sig)
 
    if (sig != 0)
       log_event(ups, LOG_WARNING, "apcupsd exiting, signal %u", sig);
+
+   // Ask do_device()'s loop (running on the main thread, if it's running
+   // at all -- see device_thread_stopped's initializer) to stop, and wait
+   // for it to actually do so before going any further. device_close()
+   // below deletes the driver's comm object; without this handshake that
+   // delete can race a still-running do_device() actively using the same
+   // object from the main thread -- a real use-after-free we hit in
+   // practice (crashed with a null-pointer jump during shutdown).
+   //
+   // Bounded, not indefinite: if the device thread is wedged deep inside
+   // a stuck USB call and never notices, we still need to finish
+   // shutting down rather than hang forever on exit.
+   shutdown_requested = 1;
+   static const int SHUTDOWN_WAIT_MS = 30000;
+   static const int SHUTDOWN_POLL_MS = 100;
+   for (int waited = 0; !device_thread_stopped && waited < SHUTDOWN_WAIT_MS;
+        waited += SHUTDOWN_POLL_MS)
+   {
+      struct timespec ts = { 0, SHUTDOWN_POLL_MS * 1000000L };
+      nanosleep(&ts, NULL);
+   }
+   if (!device_thread_stopped)
+      log_event(ups, LOG_WARNING,
+         "Device thread did not stop within %d ms; proceeding with "
+         "shutdown anyway", SHUTDOWN_WAIT_MS);
 
    clean_threads();
    clear_files();

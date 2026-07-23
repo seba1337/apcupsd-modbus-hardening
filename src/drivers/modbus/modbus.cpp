@@ -129,6 +129,12 @@ bool ModbusUpsDriver::check_state()
 
    while(1)
    {
+      // Shutdown in progress (see apcupsd_terminate()/do_device()): return
+      // promptly instead of running out the rest of wait_time (up to 60s)
+      // before the outer loop in do_device() gets a chance to notice.
+      if (shutdown_requested)
+         return false;
+
       // See if it's time to exit
       gettimeofday(&now, NULL);
       if (now.tv_sec > exittime.tv_sec ||

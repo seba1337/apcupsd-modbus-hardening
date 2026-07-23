@@ -105,6 +105,24 @@ DEVICE
    the exact moment mains power actually went out, needing a manual
    restart to recover. Fixed by making the mutex `PTHREAD_MUTEX_RECURSIVE`.
 
+10. **Fixed a use-after-free crash on shutdown.** `do_device()` (the main
+    polling loop) runs on the process's original thread; SIGTERM/SIGINT/
+    SIGHUP are blocked everywhere and handled by a *separate* dedicated
+    thread (`apcsignal.c`'s correct, standard `sigwait()` pattern — so this
+    wasn't an unsafe-signal-handler bug). But nothing synchronized that
+    terminate thread with the still-running device thread:
+    `apcupsd_terminate()` would call `device_close()` — which deletes the
+    driver's comm object — while `do_device()` could still be concurrently
+    using that same object on the main thread. Reproduced in practice: a
+    null-pointer-jump segfault during shutdown. Fixed with a small
+    handshake (`shutdown_requested` / `device_thread_stopped` in
+    `apcupsd.c`/`extern.h`): the terminate thread sets the flag and waits
+    (bounded, 30s) for the device thread to reach a safe point and
+    confirm before tearing anything down. `do_device()` checks it between
+    cycles (covers every driver); the MODBUS driver's `check_state()` also
+    checks it in its own inner loop so it doesn't wait out the rest of
+    `wait_time` (up to 60s) first.
+
 ## Known limitations / possible future work
 
 `get_capabilities()`'s per-CI probe retry (point 4) treats a timeout or

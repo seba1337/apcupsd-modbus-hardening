@@ -30,6 +30,12 @@
 UPSINFO *core_ups;
 UPSINFO *ups;
 
+// See extern.h -- apctest doesn't run the daemon's signal-handling
+// terminate thread, but device.c's do_device()/check_state() reference
+// these unconditionally, so a definition is needed here to link.
+volatile sig_atomic_t shutdown_requested = 0;
+volatile sig_atomic_t device_thread_stopped = 1;
+
 int le_bit = TIOCM_LE;
 int st_bit = TIOCM_ST;
 int sr_bit = TIOCM_SR;

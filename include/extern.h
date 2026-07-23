@@ -29,6 +29,20 @@
 
 extern UPSINFO *core_ups;
 extern char argvalue[MAXSTRING];
+
+/*
+ * Shutdown handshake between the SIGTERM/SIGINT/SIGHUP terminate thread
+ * (see apcsignal.c) and the main device-polling thread (do_device(), which
+ * runs on the process's original thread -- see device.c). Without this,
+ * apcupsd_terminate() tears down (and deletes) the driver's comm object
+ * while do_device() may still be concurrently using it, a genuine
+ * use-after-free race. shutdown_requested asks the device thread to stop;
+ * device_thread_stopped confirms it has. Plain sig_atomic_t, not a mutex --
+ * these are polled, not locked, to avoid any risk of the terminate thread
+ * blocking on a lock the (possibly wedged) device thread already holds.
+ */
+extern volatile sig_atomic_t shutdown_requested;
+extern volatile sig_atomic_t device_thread_stopped;
 extern void (*error_out) (const char *file, int line, const char *fmt, va_list arg_ptr);
 extern void (*error_cleanup) (void);
 extern void error_out_wrapper(const char *file, int line, const char *fmt, ...) __attribute__((noreturn));
